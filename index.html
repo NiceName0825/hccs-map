@@ -130,10 +130,7 @@ body {
 <button id="logoutBtn" onclick="logout()" style="display:none;">Logout</button>
 
 <div id="floorSelector">
-  <button onclick="changeFloor(1)">Finance Office</button>
-  <button onclick="changeFloor(2)">CTB Grounds</button>
-  <button onclick="changeFloor(3)">Guidance</button>
-  <button onclick="changeFloor(4)">Chapel</button>
+  <button onclick="changeFloor(1)">Ground Floor</button>
 </div>
 
 <div id="rightMenu"></div>
@@ -203,10 +200,7 @@ let startLocation = null;
 let destinationLocation = null;
 
 const floorImages = {
-  1: "Finance Office.jpg",
-  2: "CTB Grounds.jpg",
-  3: "Guidance.jpg",
-  4: "Chapel.jpg"
+  1: "Copy of Untitled.png",
 };
 
 let currentImage = new Image();
@@ -221,12 +215,6 @@ const locations = [
   { name: "Library", x: 450, y: 200, floor: 2 },
   { name: "CTB 508", x: 350, y: 235, floor: 2 }
 ];
-
-const stairs = {
-  1: { x: 500, y: 300 },
-  2: { x: 520, y: 280 },
-  3: { x: 540, y: 260 }
-};
 
 function drawMap() {
   ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
@@ -363,4 +351,5 @@ loadMenu();
 </body>
 
 </html>
+
 
