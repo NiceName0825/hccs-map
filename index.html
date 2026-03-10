@@ -115,6 +115,29 @@ background:#222;
 
 <body>
 
+<div id="tutorialOverlay" style="
+    position:fixed;
+    top:0;
+    left:0;
+    width:100%;
+    height:100%;
+    background:rgba(0,0,0,0.8);
+    color:white;
+    display:none;
+    z-index:1000;
+    justify-content:center;
+    align-items:center;
+    text-align:center;
+    padding:20px;
+">
+    <div id="tutorialContent" style="max-width:600px;">
+        <h2>Welcome to HCCS Map!</h2>
+        <p id="tutorialText"></p>
+        <button id="tutorialNextBtn" style="padding:10px 20px;margin-top:20px;">Next</button>
+        <button id="tutorialCloseBtn" style="padding:10px 20px;margin-top:20px;">Skip Tutorial</button>
+    </div>
+</div>
+
 <div id="authScreen">
 <div id="authBox">
 <img src="logo.jpeg">
@@ -133,7 +156,17 @@ background:#222;
 </div>
 
 <div id="rightMenu"></div>
-
+<div id="tooltip" style="
+position:absolute;
+background:black;
+color:white;
+padding:4px 8px;
+font-size:12px;
+border-radius:4px;
+pointer-events:none;
+display:none;
+z-index:20;
+"></div>
 <canvas id="mapCanvas"></canvas>
 
 <div id="zoomControls">
@@ -142,8 +175,20 @@ background:#222;
 </div>
 
 <button style="position:absolute;bottom:20px;left:20px;z-index:10;" onclick="toggleDarkMode()">🌙</button>
-<button style="position:absolute;bottom:60px;left:20px;z-index:10;" onclick="toggleWallMode()">Show Detected Walls</button>
-<button style="position:absolute;bottom:100px;left:20px;z-index:10;" onclick="toggleManualWalls()">Add Walls</button>
+<button id="wallBtn" style="display:none;position:absolute;bottom:60px;left:20px;z-index:10;" onclick="toggleWallMode()">Show Detected Walls</button>
+<button id="addWallBtn" style="display:none;position:absolute;bottom:100px;left:20px;z-index:10;" onclick="toggleManualWalls()">Add Walls</button>
+<button id="clearWallBtn" style="display:none;position:absolute;bottom:140px;left:20px;z-index:10;" onclick="clearSavedWalls()">Clear Saved Walls</button>
+<button id="exportWallBtn" onclick="exportWalls()" style="display:none;position:absolute;bottom:180px;left:20px;z-index:10;">Export Walls</button>
+
+
+<div id="highlightBox" style="
+    position:absolute;
+    border:3px solid yellow;
+    border-radius:8px;
+    pointer-events:none;
+    display:none;
+    z-index:1010;
+"></div>
 
 <script>
 
@@ -163,18 +208,65 @@ alert("Registered");
 }
 
 function login(){
-const user=username.value;
-const pass=password.value;
-const stored=localStorage.getItem("user_"+user);
+    const user = username.value;
+    const pass = password.value;
+    const stored = localStorage.getItem("user_"+user);
 
-if(stored===pass){
-authScreen.style.display="none";
-logoutBtn.style.display="block";
-}else{
-alert("Invalid login");
-}
+    if(stored === pass){
+        authScreen.style.display = "none";
+        logoutBtn.style.display = "block";
+
+        // --- show tutorial after login ---
+        showTutorial();
+
+    } else {
+        alert("Invalid login");
+    }
 }
 
+
+
+let tutorialIndex = 0;
+
+function showTutorial() {
+    const overlay = document.getElementById("tutorialOverlay");
+    const text = document.getElementById("tutorialText");
+    const highlight = document.getElementById("highlightBox");
+
+    overlay.style.display = "flex";
+
+    const step = tutorialSteps[tutorialIndex];
+text.innerText = step.text;
+
+if(step.target){
+    const el = document.querySelector(step.target);
+    if(el){
+        const rect = el.getBoundingClientRect();
+        highlight.style.display = "block";
+        highlight.style.top = (rect.top + window.scrollY - 5) + "px";
+        highlight.style.left = (rect.left + window.scrollX - 5) + "px";
+        highlight.style.width = (rect.width + 10) + "px";
+        highlight.style.height = (rect.height + 10) + "px";
+    }
+} else {
+    highlight.style.display = "none";
+}
+
+document.getElementById("tutorialNextBtn").addEventListener("click", () => {
+    tutorialIndex++;
+    if (tutorialIndex >= tutorialSteps.length) {
+        document.getElementById("tutorialOverlay").style.display = "none";
+        document.getElementById("highlightBox").style.display = "none";
+    } else {
+        showTutorial();
+    }
+});
+
+document.getElementById("tutorialCloseBtn").addEventListener("click", () => {
+    document.getElementById("tutorialOverlay").style.display = "none";
+    document.getElementById("highlightBox").style.display = "none";
+});
+}
 function logout(){
 authScreen.style.display="flex";
 logoutBtn.style.display="none";
@@ -184,6 +276,7 @@ logoutBtn.style.display="none";
 
 const canvas=document.getElementById("mapCanvas");
 const ctx=canvas.getContext("2d");
+const tooltip = document.getElementById("tooltip");
 
 canvas.width=window.innerWidth;
 canvas.height=window.innerHeight;
@@ -209,7 +302,7 @@ currentImage.src=floorImages[currentFloor];
 
 /* GRID */
 
-const gridSize=6;
+const gridSize=5;
 
 let wallGrid=[];
 let gridWidth;
@@ -261,21 +354,22 @@ const b=data[i+2];
 
 const brightness=(r+g+b)/3;
 
-const max=Math.max(r,g,b);
-const min=Math.min(r,g,b);
-const colorDiff=max-min;
+/* IGNORE GREEN AREAS */
+const isGreen = g > 120 && g > r + 40 && g > b + 40;
 
-const isGray=colorDiff<30;
+/* DETECT DARK WALL LINES */
+const darkLine = brightness < 130;
 
-const darkWall=brightness<160 && isGray;
-const lightWall=brightness>160 && brightness<220 && isGray;
-const redPillar=r>140 && g<90 && b<90;
+/* DETECT PURPLE WALL OUTLINES */
+const purpleWall = r > 120 && b > 120 && g < 120;
 
-const isCyan=g>150 && b>150 && r<120;
-const isGreen=g>r+50 && g>b+50;
-const isBlue=b>r+50 && b>g+50;
+/* DETECT BLUE WALL OUTLINES */
+const blueWall = b > 140 && r < 120;
 
-if((darkWall||lightWall||redPillar) && !isCyan && !isGreen && !isBlue){
+/* DETECT RED PILLARS */
+const redPillar = r > 140 && g < 90 && b < 90;
+
+if((darkLine || purpleWall || blueWall || redPillar) && !isGreen){
 
 const gx=Math.floor(x/gridSize);
 const gy=Math.floor(y/gridSize);
@@ -289,6 +383,7 @@ wallGrid[gx][gy]=true;
 
 /* LOAD SAVED WALLS AFTER DETECTION */
 loadWalls();
+loadWallsFromFile();
 
 }
 
@@ -308,7 +403,7 @@ const locations=[
 {name:"CCFO",x:2280,y:2370,floor:1},
 {name:"CTB Elevator 2",x:2000,y:2780,floor:1},
 {name:"High School Principal's Office",x:1950,y:3420,floor:1},
-{name:"Guidance Office",x:2930,y:3420,floor:1},
+{name:"Guidance Office",x:2935,y:3420,floor:1},
 {name:"Mother Theresa's Chapel",x:2850,y:2450,floor:1},
 {name:"HRMD Office",x:2850,y:1720,floor:1},
 {name:"Model House",x:2850,y:1400,floor:1},
@@ -353,8 +448,25 @@ if(destinationLocation) highlight(destinationLocation,"green");
 }
 
 function isWall(x,y){
+
 if(x<0||y<0||x>=gridWidth||y>=gridHeight) return true;
-return wallGrid[x][y];
+
+const buffer = 3; // distance from wall
+
+for(let dx=-buffer; dx<=buffer; dx++){
+for(let dy=-buffer; dy<=buffer; dy++){
+
+const nx = x + dx;
+const ny = y + dy;
+
+if(nx>=0 && ny>=0 && nx<gridWidth && ny<gridHeight){
+if(wallGrid[nx][ny]) return true;
+}
+
+}
+}
+
+return false;
 }
 
 /* PATHFIND */
@@ -650,6 +762,132 @@ drawMap();
 };
 
 loadMenu();
+
+function clearSavedWalls(){
+localStorage.removeItem("manualWalls");
+alert("Saved walls cleared");
+location.reload();
+}
+
+let adminMode=false;
+
+document.addEventListener("keydown",function(e){
+
+if(e.ctrlKey && e.shiftKey && e.key==="A"){
+
+adminMode=!adminMode;
+
+const state=adminMode ? "block" : "none";
+
+document.getElementById("wallBtn").style.display=state;
+document.getElementById("addWallBtn").style.display=state;
+document.getElementById("clearWallBtn").style.display=state;
+document.getElementById("exportWallBtn").style.display=state;
+
+alert(adminMode ? "Admin Mode Enabled" : "Admin Mode Disabled");
+
+}
+
+});
+
+function loadWallsFromFile(){
+
+fetch("walls.json")
+.then(res=>{
+if(!res.ok) return null;
+return res.json();
+})
+.then(data=>{
+
+if(!data) return;
+
+data.forEach(w=>{
+
+const x=w[0];
+const y=w[1];
+
+if(x<gridWidth && y<gridHeight){
+wallGrid[x][y]=true;
+}
+
+});
+
+drawMap();
+
+})
+.catch(()=>{});
+
+}
+
+canvas.addEventListener("mousemove",e=>{
+
+if(isDragging) return;
+
+const rect=canvas.getBoundingClientRect();
+
+const x=(e.clientX-rect.left-offsetX)/scale;
+const y=(e.clientY-rect.top-offsetY)/scale;
+
+let found=false;
+
+locations.forEach(loc=>{
+
+if(loc.floor!==currentFloor) return;
+
+const dx=x-loc.x;
+const dy=y-loc.y;
+const dist=Math.sqrt(dx*dx+dy*dy);
+
+if(dist<10){
+
+tooltip.style.display="block";
+tooltip.style.left=e.clientX+10+"px";
+tooltip.style.top=e.clientY+10+"px";
+tooltip.innerText=loc.name;
+
+found=true;
+
+}
+
+});
+
+if(!found){
+tooltip.style.display="none";
+}
+
+});
+
+function exportWalls(){
+
+const saveData=[];
+
+for(let x=0;x<gridWidth;x++){
+for(let y=0;y<gridHeight;y++){
+if(wallGrid[x][y]){
+saveData.push([x,y]);
+}
+}
+}
+
+const blob=new Blob([JSON.stringify(saveData)],{type:"application/json"});
+
+const a=document.createElement("a");
+a.href=URL.createObjectURL(blob);
+a.download="walls.json";
+a.click();
+
+}
+
+
+
+const tutorialSteps = [
+    { text: "Click anywhere on the map to set your starting location.", target: "#mapCanvas" },
+    { text: "Click a location on the right menu to set your destination.", target: "#rightMenu" },
+    { text: "Use the + / − buttons to zoom in and out.", target: "#zoomControls" },
+    { text: "Admin users can add or remove walls using Ctrl+Shift+A to enable admin mode.", target: "#wallBtn" },
+    { text: "Hover over dots to see their names.", target: null }, // no highlight
+    { text: "Click 'Skip Tutorial' anytime to close this tutorial.", target: "#tutorialCloseBtn" }
+];
 
 </script>
 
